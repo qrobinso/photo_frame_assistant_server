@@ -1,0 +1,28 @@
+version: '3'
+
+services:
+  photo-server:
+    image: ghcr.io/yourusername/photo-frame-assistant:latest  # We would host the image on GitHub Container Registry
+    # Alternatively, build directly from GitHub
+    build:
+      context: https://github.com/yourusername/photo-frame-assistant.git#main
+      dockerfile: docker/Dockerfile
+    container_name: photo-frame-assistant
+    ports:
+      - "5000:5000"
+    volumes:
+      - photo_data:/app/data  # Single volume for all persistent data
+    environment:
+      - TZ=UTC  # Set your timezone here
+      # Add any other configuration options here
+      - CONFIG_PATH=/app/data/config  # New unified config location
+      - UPLOAD_PATH=/app/data/uploads
+      - LOG_PATH=/app/data/logs
+    restart: unless-stopped
+    privileged: true  # For hardware access
+    devices:
+      - /dev/i2c-1:/dev/i2c-1  # For Raspberry Pi hardware
+
+volumes:
+  photo_data:
+    driver: local 

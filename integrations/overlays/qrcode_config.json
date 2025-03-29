@@ -1,0 +1,13 @@
+{
+    "enabled": true,
+    "port": 5000,
+    "custom_url": null,
+    "size": "medium",
+    "position": "bottom-right",
+    "link_type": "frame_playlist",
+    "bg_opacity": 90,
+    "exact_position": {
+        "x": 0.2536,
+        "y": 0.001
+    }
+}

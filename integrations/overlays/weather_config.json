@@ -1,0 +1,11 @@
+{
+    "enabled": false,
+    "zipcode": "07081",
+    "api_key": "********",
+    "units": "F",
+    "update_interval": 1,
+    "exact_position": {
+        "x": 0.1,
+        "y": 0.1
+    }
+}
