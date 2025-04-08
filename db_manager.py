@@ -53,19 +53,20 @@ def create_database():
     """Create a new database with all tables"""
     try:
         # Import models from server.py
-        from server import db, Photo, PhotoFrame, PlaylistEntry, ScheduledGeneration, GenerationHistory, SyncGroup
+        from server import app, db, Photo, PhotoFrame, PlaylistEntry, ScheduledGeneration, GenerationHistory, SyncGroup
         
-        # Create all tables
-        logger.info("Creating database tables...")
-        db.create_all()
-        
-        # Verify tables were created
-        engine = create_engine(f'sqlite:///{db_path}')
-        tables = engine.table_names()
-        logger.info(f"Created tables: {', '.join(tables)}")
-        
-        logger.info("Database creation complete!")
-        return True
+        # Create all tables within application context
+        with app.app_context():
+            logger.info("Creating database tables...")
+            db.create_all()
+            
+            # Verify tables were created
+            engine = create_engine(f'sqlite:///{db_path}')
+            tables = engine.table_names()
+            logger.info(f"Created tables: {', '.join(tables)}")
+            
+            logger.info("Database creation complete!")
+            return True
     except Exception as e:
         logger.error(f"Error creating database: {e}")
         return False
@@ -74,43 +75,45 @@ def migrate_database():
     """Migrate the database schema to match the current models"""
     try:
         # Import models from server.py
-        from server import db, Photo, PhotoFrame, PlaylistEntry, ScheduledGeneration, GenerationHistory, SyncGroup
+        from server import app, db, Photo, PhotoFrame, PlaylistEntry, ScheduledGeneration, GenerationHistory, SyncGroup
         
-        # Get the engine and inspector
-        engine = db.engine
-        inspector = inspect(engine)
-        
-        # Get existing tables
-        existing_tables = inspector.get_table_names()
-        logger.info(f"Existing tables: {', '.join(existing_tables)}")
-        
-        # Get metadata from models
-        metadata = db.metadata
-        
-        # Create missing tables
-        missing_tables = set(metadata.tables.keys()) - set(existing_tables)
-        if missing_tables:
-            logger.info(f"Creating missing tables: {', '.join(missing_tables)}")
-            for table_name in missing_tables:
-                metadata.tables[table_name].create(engine)
-        
-        # Check for missing columns in existing tables
-        for table_name in existing_tables:
-            if table_name in metadata.tables:
-                # Get existing columns
-                existing_columns = {col['name'] for col in inspector.get_columns(table_name)}
-                
-                # Get model columns
-                model_columns = {col.name for col in metadata.tables[table_name].columns}
-                
-                # Find missing columns
-                missing_columns = model_columns - existing_columns
-                if missing_columns:
-                    logger.info(f"Table '{table_name}' is missing columns: {', '.join(missing_columns)}")
-                    logger.info(f"Please run a manual migration for table '{table_name}'")
-        
-        logger.info("Database migration check complete!")
-        return True
+        # Get the engine and inspector within application context
+        with app.app_context():
+            # Get the engine and inspector
+            engine = db.engine
+            inspector = inspect(engine)
+            
+            # Get existing tables
+            existing_tables = inspector.get_table_names()
+            logger.info(f"Existing tables: {', '.join(existing_tables)}")
+            
+            # Get metadata from models
+            metadata = db.metadata
+            
+            # Create missing tables
+            missing_tables = set(metadata.tables.keys()) - set(existing_tables)
+            if missing_tables:
+                logger.info(f"Creating missing tables: {', '.join(missing_tables)}")
+                for table_name in missing_tables:
+                    metadata.tables[table_name].create(engine)
+            
+            # Check for missing columns in existing tables
+            for table_name in existing_tables:
+                if table_name in metadata.tables:
+                    # Get existing columns
+                    existing_columns = {col['name'] for col in inspector.get_columns(table_name)}
+                    
+                    # Get model columns
+                    model_columns = {col.name for col in metadata.tables[table_name].columns}
+                    
+                    # Find missing columns
+                    missing_columns = model_columns - existing_columns
+                    if missing_columns:
+                        logger.info(f"Table '{table_name}' is missing columns: {', '.join(missing_columns)}")
+                        logger.info(f"Please run a manual migration for table '{table_name}'")
+            
+            logger.info("Database migration check complete!")
+            return True
     except Exception as e:
         logger.error(f"Error during database migration: {e}")
         return False
