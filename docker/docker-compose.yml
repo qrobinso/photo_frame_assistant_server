@@ -2,10 +2,10 @@ version: '3'
 
 services:
   photo-server:
-    image: ghcr.io/yourusername/photo-frame-assistant:latest  # We would host the image on GitHub Container Registry
+    image: ghcr.io/qrobinso/photo_frame_assistant_server:latest  # We would host the image on GitHub Container Registry
     # Alternatively, build directly from GitHub
     build:
-      context: https://github.com/yourusername/photo-frame-assistant.git#main
+      context: https://github.com/qrobinso/photo_frame_assistant_server.git#main
       dockerfile: docker/Dockerfile
     container_name: photo-frame-assistant
     ports:

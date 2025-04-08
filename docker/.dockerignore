@@ -18,7 +18,7 @@ docker/Dockerfile
 docker/docker-compose.yml
 docker/.dockerignore
 
-# Application data (will be mounted as volumes)
+# Application data
 uploads/*
 logs/*
 credentials/*

@@ -128,7 +128,7 @@ Detailed documentation is available in the [docs](docs/) directory:
    mkdir photo-frame-assistant && cd photo-frame-assistant
    
    # Download the docker-compose file
-   curl -O https://raw.githubusercontent.com/yourusername/photo-frame-assistant/main/docker/docker-compose.yml
+   curl -O https://raw.githubusercontent.com/qrobinso/photo_frame_assistant_server/main/docker/docker-compose.yml
    ```
 
 2. Start the application:

@@ -396,8 +396,8 @@ class PhotoProcessor:
                     logger.info(f"First few colors in map: {color_map[:5] if len(color_map) > 5 else color_map}")
                     
                     try:
-                        logger.info(f"Applying color quantization with {len(color_map)} colors using Floyd-Steinberg dithering")
-                        wand_img.quantize(number_colors=len(color_map), dither=True, method='floyd_steinberg')
+                        logger.info(f"Applying color quantization with {len(color_map)} colors")
+                        wand_img.quantize(number_colors=len(color_map), dither=True)
                         logger.info("Color quantization with Floyd-Steinberg dithering applied successfully")
                     except Exception as e:
                         logger.warning(f"Floyd-Steinberg dithering failed: {e}, falling back to no dithering")
