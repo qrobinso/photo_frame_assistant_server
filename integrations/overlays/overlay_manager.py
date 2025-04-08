@@ -8,6 +8,7 @@ import traceback
 from abc import ABC, abstractmethod
 from photo_processing import PhotoProcessor
 from .qrcode_integration import QRCodeIntegration
+from datetime import datetime
 
 # Configure more detailed logging
 logging.basicConfig(
@@ -39,7 +40,7 @@ class WeatherOverlay(BaseOverlay):
         self.weather = weather_integration
         # Use static/fonts directory
         self.font_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 
-                                    'static', 'fonts', 'BebasNeue-Regular.ttf')
+                                    'static', 'fonts')
         logging.info(f"Weather overlay initialized with font path: {self.font_path}")
         
     @property
@@ -61,91 +62,81 @@ class WeatherOverlay(BaseOverlay):
             return img
             
         try:
-            # Define scaling factors
-            icon_scale = 0.10  # Icon will be 25% of the image height
-            font_scale = 0.05  # Font size will be 15% of the image height
+            # Get style settings
+            style = self.weather.settings.get('style', {})
+            format_str = style.get('format', '{temp}° {units}')
             
-            # Calculate sizes based on image dimensions
-            icon_size = int(img.height * icon_scale)
-            font_size = int(img.height * font_scale)
+            # Parse weather data
+            replacements = {
+                'temp': int(weather_data['main']['temp']),
+                'temp_min': int(weather_data['main']['temp_min']),
+                'temp_max': int(weather_data['main']['temp_max']),
+                'feels_like': int(weather_data['main']['feels_like']),
+                'humidity': weather_data['main']['humidity'],
+                'pressure': weather_data['main']['pressure'],
+                'description': weather_data['weather'][0]['description'].title(),
+                'wind_speed': weather_data['wind']['speed'],
+                'wind_deg': weather_data['wind']['deg'],
+                'clouds': weather_data['clouds']['all'],
+                'visibility': weather_data['visibility'],
+                'sunrise': datetime.fromtimestamp(weather_data['sys']['sunrise']).strftime('%H:%M'),
+                'sunset': datetime.fromtimestamp(weather_data['sys']['sunset']).strftime('%H:%M'),
+                'city': weather_data['name'],
+                'units': 'F' if self.weather.settings['units'] == 'F' else 'C'
+            }
             
-            logger.debug(f"Weather overlay parameters: icon_size={icon_size}, font_size={font_size}")
+            # Format the text
+            text = format_str
+            for key, value in replacements.items():
+                text = text.replace('{' + key + '}', str(value))
             
-            # Load font with calculated size
+            # Load font
+            font_size = self.weather._parse_size(style.get('font_size', '5%'), img.height)
+            font_family = style.get('font_family', 'BebasNeue-Regular.ttf')
+            if not font_family.endswith('.ttf'):
+                font_family += '.ttf'
+            font_path = os.path.join(self.font_path, font_family)
+            
             try:
-                font = ImageFont.truetype(self.font_path, font_size)
-                logger.debug(f"Successfully loaded font: {self.font_path}")
+                font = ImageFont.truetype(font_path, font_size)
+                logger.debug(f"Successfully loaded font: {font_path}")
             except Exception as e:
-                logger.error(f"Failed to load font {self.font_path}: {e}")
+                logger.error(f"Failed to load font {font_path}: {e}")
                 font = ImageFont.load_default()
                 logger.debug("Using default font as fallback")
-                 
-            # Get weather icon
-            icon_code = weather_data['weather'][0]['icon']
-            icon_url = f"http://openweathermap.org/img/wn/{icon_code}@4x.png"
-            logger.debug(f"Fetching weather icon: {icon_url}")
             
-            response = requests.get(icon_url)
-            icon = Image.open(BytesIO(response.content)) 
-            icon = icon.resize((icon_size, icon_size))  # Resize icon based on calculated size
-            
-            # Calculate average brightness of the image
-            grayscale_img = img.convert("L")  # Convert to grayscale
-            avg_brightness = sum(grayscale_img.getdata()) / (grayscale_img.width * grayscale_img.height)
-            logger.debug(f"Image average brightness: {avg_brightness}")
-            
-            # Determine colors based on brightness
-            if avg_brightness < 128:  # Dark background
-                icon_color = (255, 255, 255)  # White
-                text_color = 'white'
-                logger.debug("Using white text for dark background")
-            else:  # Light background
-                icon_color = (0, 0, 0)  # Black
-                text_color = 'black'
-                logger.debug("Using black text for light background")
-            
-            # Convert icon to the determined color
-            if icon.mode != 'RGBA':
-                icon = icon.convert('RGBA')
-            
-            # Create colored version of icon
-            data = icon.getdata()
-            new_data = []
-            for item in data:
-                if item[3] > 0:  # If pixel is not transparent
-                    new_data.append((*icon_color, item[3]))  # Apply the determined color
-                else:
-                    new_data.append(item)
-            icon.putdata(new_data)
-            
-            # Calculate positions
-            margin = 130
-            icon_pos = (margin, margin)
-            
-            # Get temperature text
-            temp = weather_data['main']['temp']
-            units = 'F' if self.weather.settings['units'] == 'F' else 'C'
-            text = f"{int(temp)}° {units}"
-            logger.debug(f"Weather text to display: {text}")
-            
-            # Get text size for positioning
+            # Calculate text size
             text_bbox = draw.textbbox((0, 0), text, font=font)
             text_width = text_bbox[2] - text_bbox[0]
             text_height = text_bbox[3] - text_bbox[1]
             
-            # Center text vertically with icon and position to the right
-            text_pos = (
-                margin + icon.width - 20,  # 20px spacing between icon and text
-                margin + (icon.height // 2) - (text_height // 1.4)  # Vertically center text with icon
-            )
-            logger.debug(f"Weather text position: {text_pos}")
+            # Calculate position
+            position = style.get('position', 'top-left')
+            margin = self.weather._parse_size(style.get('margin', '5%'), min(img.width, img.height))
+            pos = self._calculate_position(position, img.size, (text_width, text_height), margin)
             
-            # Add icon
-            img.paste(icon, icon_pos, icon)
+            # Apply background if enabled
+            if style.get('background', {}).get('enabled', False):
+                bg_width = text_width + 40
+                bg_height = text_height + 20
+                bg_color = style['background'].get('color', '#ffffff')
+                bg_opacity = int(style['background'].get('opacity', 30) * 255 / 100)
+                bg_color_rgba = self.weather._parse_color(bg_color, bg_opacity)
+                
+                bg_pos = self._calculate_position(position, img.size, (bg_width, bg_height), margin)
+                bg = Image.new('RGBA', (bg_width, bg_height), bg_color_rgba)
+                img.paste(bg, bg_pos, bg)
+                
+                # Adjust text position relative to background
+                text_pos = (
+                    bg_pos[0] + 20,
+                    bg_pos[1] + 10
+                )
+            else:
+                text_pos = pos
             
-            # Add temperature text in determined color
-            draw.text(text_pos, text, font=font, fill=text_color)
-            logger.info("Weather overlay successfully applied")
+            # Draw text
+            draw.text(text_pos, text, font=font, fill=style.get('color', 'white'))
             
             return img
             
@@ -153,6 +144,36 @@ class WeatherOverlay(BaseOverlay):
             logger.error(f"Error adding weather overlay: {e}")
             logger.error(traceback.format_exc())
             return img
+            
+    def _calculate_position(self, position_str, img_size, element_size, margin):
+        """Calculate position coordinates based on position string.
+        
+        Args:
+            position_str: Position identifier (e.g., 'top-left', 'bottom-right')
+            img_size: Tuple of (width, height) for the image
+            element_size: Tuple of (width, height) for the element to position
+            margin: Margin in pixels
+            
+        Returns:
+            Tuple of (x, y) coordinates
+        """
+        width, height = img_size
+        elem_width, elem_height = element_size
+        
+        positions = {
+            'top-left': (margin, margin),
+            'top-right': (width - elem_width - margin, margin),
+            'top-center': ((width - elem_width) // 2, margin),
+            'bottom-left': (margin, height - elem_height - margin),
+            'bottom-right': (width - elem_width - margin, height - elem_height - margin),
+            'bottom-center': ((width - elem_width) // 2, height - elem_height - margin),
+            'center': ((width - elem_width) // 2, (height - elem_height) // 2)
+        }
+        
+        # Get the position or default to top-left
+        pos = positions.get(position_str, positions['top-left'])
+        logger.debug(f"Calculated position {position_str}: {pos} for element size {element_size} with margin {margin}")
+        return pos
 
 class MetadataOverlay(BaseOverlay):
     def __init__(self, metadata_integration):

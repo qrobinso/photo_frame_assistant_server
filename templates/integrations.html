@@ -524,9 +524,7 @@
                             <table class="table table-hover" id="immichFacesTable">
                                 <thead>
                                     <tr>
-                                        <th>Face</th>
                                         <th>Name</th>
-                                        <th>Photos</th>
                                         <th>Actions</th>
                                     </tr>
                                 </thead>
@@ -596,8 +594,106 @@
                     <input type="number" class="form-control" id="updateInterval" name="updateInterval" 
                            value="6" min="1" max="24">
                 </div>
-                <button type="submit" class="btn btn-primary me-2">Save Settings</button>
-                <button type="button" class="btn btn-secondary" id="testWeather">Test Weather</button>
+
+                <!-- Add Style Settings Section -->
+                <h6 class="mt-4 mb-3">Style Settings</h6>
+                
+                <!-- Add Format Field -->
+                <div class="mb-3">
+                    <label for="weatherFormat" class="form-label">Format</label>
+                    <input type="text" class="form-control" id="weatherFormat" name="format">
+                    <small class="form-text text-muted">
+                        Available variables:
+                        <ul class="mt-2">
+                            <li><code>{temp}</code> - Current temperature</li>
+                            <li><code>{temp_min}</code> - Minimum temperature</li>
+                            <li><code>{temp_max}</code> - Maximum temperature</li>
+                            <li><code>{feels_like}</code> - Feels like temperature</li>
+                            <li><code>{humidity}</code> - Humidity percentage</li>
+                            <li><code>{pressure}</code> - Pressure</li>
+                            <li><code>{description}</code> - Weather description</li>
+                            <li><code>{wind_speed}</code> - Wind speed</li>
+                            <li><code>{wind_deg}</code> - Wind direction</li>
+                            <li><code>{clouds}</code> - Cloud coverage</li>
+                            <li><code>{visibility}</code> - Visibility</li>
+                            <li><code>{sunrise}</code> - Sunrise time</li>
+                            <li><code>{sunset}</code> - Sunset time</li>
+                            <li><code>{city}</code> - City name</li>
+                        </ul>
+                    </small>
+                            </div>
+
+                <!-- Position Setting -->
+                                <div class="mb-3">
+                    <label for="weatherPosition" class="form-label">Position</label>
+                    <select class="form-select" id="weatherPosition" name="position">
+                        <option value="top-left">Top Left</option>
+                        <option value="top-right">Top Right</option>
+                        <option value="top-center">Top Center</option>
+                        <option value="bottom-left">Bottom Left</option>
+                        <option value="bottom-right">Bottom Right</option>
+                        <option value="bottom-center">Bottom Center</option>
+                        <option value="center">Center</option>
+                    </select>
+                </div>
+
+                <div class="mb-3">
+                    <label for="weatherFontSize" class="form-label">Font Size</label>
+                    <div class="input-group">
+                        <input type="number" class="form-control" id="weatherFontSize" name="fontSize" min="1" max="100" value="5">
+                        <span class="input-group-text">%</span>
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label for="weatherMargin" class="form-label">Margin</label>
+                    <div class="input-group">
+                        <input type="number" class="form-control" id="weatherMargin" name="margin" min="0" max="100" value="5">
+                        <span class="input-group-text">%</span>
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label for="weatherColor" class="form-label">Text Color</label>
+                    <input type="color" class="form-control form-control-color" id="weatherColor" name="color" value="#ffffff">
+                </div>
+
+                <!-- Background Settings -->
+                <div class="mb-3">
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" id="weatherBackgroundEnabled" name="backgroundEnabled">
+                        <label class="form-check-label" for="weatherBackgroundEnabled">
+                            Enable Background
+                        </label>
+                    </div>
+                    <div id="weatherBackgroundSettings" style="display: none;">
+                        <div class="mb-2">
+                            <label for="weatherBackgroundColor" class="form-label">Background Color</label>
+                            <input type="color" class="form-control form-control-color" id="weatherBackgroundColor" name="backgroundColor" value="#ffffff">
+                        </div>
+                        <div class="mb-2">
+                            <label for="weatherBackgroundOpacity" class="form-label">Background Opacity</label>
+                            <div class="input-group">
+                                <input type="range" class="form-range" id="weatherBackgroundOpacity" name="backgroundOpacity" min="0" max="100" value="30">
+                                <span id="weatherBackgroundOpacityValue" class="ms-2">30%</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Add this after the Format Field in the Weather Integration Card -->
+                <div class="mb-3">
+                    <label for="weatherFontFamily" class="form-label">Font Family</label>
+                    <select class="form-select" id="weatherFontFamily" name="fontFamily">
+                        <option value="BebasNeue-Regular.ttf">Bebas Neue Regular</option>
+                        <!-- Additional fonts will be populated by JavaScript -->
+                    </select>
+                </div>
+
+                <div class="d-flex gap-2">
+                    <button type="submit" class="btn btn-primary">Save Settings</button>
+                    <button type="button" class="btn btn-secondary" id="testWeather">Test Connection</button>
+                </div>
             </form>
         </div>
     </div>
@@ -934,6 +1030,9 @@ document.addEventListener('DOMContentLoaded', async function() {
     
     // Load available frames for auto-add dropdown
     loadAvailableFrames();
+    
+    // Load available fonts for weather
+    await loadWeatherFonts();
 });
 
 function updateGooglePhotosStatus() {
@@ -1149,7 +1248,7 @@ function showWeatherHelp() {
     modal.show();
 }
 
-// Handle weather settings form submission
+// Update the form submission handler
 document.getElementById('weatherForm').addEventListener('submit', async function(e) {
     e.preventDefault();
     
@@ -1158,8 +1257,23 @@ document.getElementById('weatherForm').addEventListener('submit', async function
         zipcode: document.getElementById('zipcode').value,
         api_key: document.getElementById('apiKey').value,
         units: document.querySelector('input[name="units"]:checked').value,
-        update_interval: parseInt(document.getElementById('updateInterval').value)
+        update_interval: parseInt(document.getElementById('updateInterval').value),
+        style: {
+            format: document.getElementById('weatherFormat').value,
+            position: document.getElementById('weatherPosition').value,
+            font_family: document.getElementById('weatherFontFamily').value, // Add font family
+            font_size: `${document.getElementById('weatherFontSize').value}%`,
+            margin: `${document.getElementById('weatherMargin').value}%`,
+            color: document.getElementById('weatherColor').value,
+            background: {
+                enabled: document.getElementById('weatherBackgroundEnabled').checked,
+                color: document.getElementById('weatherBackgroundColor').value,
+                opacity: parseInt(document.getElementById('weatherBackgroundOpacity').value)
+            }
+        }
     };
+
+    console.log('Saving weather settings:', formData); // Add logging
 
     try {
         const response = await fetch('/api/weather/settings', {
@@ -1171,46 +1285,134 @@ document.getElementById('weatherForm').addEventListener('submit', async function
         });
 
         const data = await response.json();
+        console.log('Server response:', data); // Add logging
         
-        if (response.ok) {
+        if (response.ok && data.success) {
             alert('Weather settings saved successfully');
+            // Reload settings to ensure UI is in sync
+            await loadWeatherSettings();
         } else {
             throw new Error(data.error || 'Failed to save settings');
         }
     } catch (error) {
+        console.error('Error saving weather settings:', error);
         alert('Error saving weather settings: ' + error.message);
     }
 });
 
-// Handle weather toggle switch
-document.getElementById('weatherToggle').addEventListener('change', function(e) {
-    const formElements = document.querySelectorAll('#weatherForm input:not(#weatherToggle)');
-    formElements.forEach(input => {
-        input.disabled = !e.target.checked;
-    });
-});
-
-// Load current weather settings when page loads
+// Update loadWeatherSettings function
 async function loadWeatherSettings() {
     try {
         const response = await fetch('/api/weather/settings');
-        const settings = await response.json();
+        const data = await response.json();
         
-        document.getElementById('weatherToggle').checked = settings.enabled;
+        if (!data.success) {
+            throw new Error(data.error || 'Failed to load settings');
+        }
+        
+        const settings = data.settings;
+        
+        // Update basic settings
+        document.getElementById('weatherToggle').checked = settings.enabled || false;
         document.getElementById('zipcode').value = settings.zipcode || '';
         document.getElementById('apiKey').value = settings.api_key || '';
         document.querySelector(`input[name="units"][value="${settings.units || 'F'}"]`).checked = true;
         document.getElementById('updateInterval').value = settings.update_interval || 6;
         
+        // Update style settings if they exist
+        if (settings.style) {
+            // Format
+            const formatInput = document.getElementById('weatherFormat');
+            if (formatInput) {
+                formatInput.value = settings.style.format || '{temp}° {units}';
+            }
+
+            // Position
+            const positionSelect = document.getElementById('weatherPosition');
+            if (positionSelect) {
+                positionSelect.value = settings.style.position || 'top-left';
+            }
+
+            // Font size (remove % if present)
+            const fontSize = document.getElementById('weatherFontSize');
+            if (fontSize) {
+                const fontSizeValue = settings.style.font_size || '5%';
+                fontSize.value = parseInt(fontSizeValue.replace('%', ''));
+            }
+
+            // Margin (remove % if present)
+            const margin = document.getElementById('weatherMargin');
+            if (margin) {
+                const marginValue = settings.style.margin || '5%';
+                margin.value = parseInt(marginValue.replace('%', ''));
+            }
+
+            // Color
+            const color = document.getElementById('weatherColor');
+            if (color) {
+                color.value = settings.style.color || '#ffffff';
+            }
+
+            // Background settings
+            const background = settings.style.background || {};
+            const bgEnabled = document.getElementById('weatherBackgroundEnabled');
+            const bgSettings = document.getElementById('weatherBackgroundSettings');
+            const bgColor = document.getElementById('weatherBackgroundColor');
+            const bgOpacity = document.getElementById('weatherBackgroundOpacity');
+            const bgOpacityValue = document.getElementById('weatherBackgroundOpacityValue');
+
+            if (bgEnabled) {
+                bgEnabled.checked = background.enabled || false;
+                if (bgSettings) {
+                    bgSettings.style.display = background.enabled ? 'block' : 'none';
+                }
+            }
+
+            if (bgColor) {
+                bgColor.value = background.color || '#ffffff';
+            }
+
+            if (bgOpacity) {
+                bgOpacity.value = background.opacity || 30;
+            }
+
+            if (bgOpacityValue) {
+                bgOpacityValue.textContent = `${background.opacity || 30}%`;
+            }
+
+            // Font Family
+            const fontFamilySelect = document.getElementById('weatherFontFamily');
+            if (fontFamilySelect) {
+                const fontValue = settings.style.font_family || 'BebasNeue-Regular.ttf';
+                // Make sure the value includes .ttf extension
+                const fullFontValue = fontValue.endsWith('.ttf') ? fontValue : `${fontValue}.ttf`;
+                fontFamilySelect.value = fullFontValue;
+                
+                // If the value wasn't set, log a warning
+                if (fontFamilySelect.value !== fullFontValue) {
+                    console.warn(`Font family ${fullFontValue} not found in options`);
+                }
+            }
+        }
+        
         // Update form elements disabled state
-        const formElements = document.querySelectorAll('#weatherForm input:not(#weatherToggle)');
+        const formElements = document.querySelectorAll('#weatherForm input:not(#weatherToggle), #weatherForm select');
         formElements.forEach(input => {
             input.disabled = !settings.enabled;
         });
     } catch (error) {
         console.error('Error loading weather settings:', error);
+        alert('Error loading weather settings: ' + error.message);
     }
 }
+
+// Handle weather toggle switch
+document.getElementById('weatherToggle').addEventListener('change', function(e) {
+    const formElements = document.querySelectorAll('#weatherForm input:not(#weatherToggle), #weatherForm select');
+    formElements.forEach(input => {
+        input.disabled = !e.target.checked;
+    });
+});
 
 // Handle test connection button
 document.getElementById('testWeather').addEventListener('click', async function() {
@@ -1228,6 +1430,16 @@ document.getElementById('testWeather').addEventListener('click', async function(
     } catch (error) {
         alert('Error testing weather connection: ' + error.message);
     }
+});
+
+// Add background toggle handler
+document.getElementById('weatherBackgroundEnabled').addEventListener('change', function(e) {
+    document.getElementById('weatherBackgroundSettings').style.display = e.target.checked ? 'block' : 'none';
+});
+
+// Add opacity range handler
+document.getElementById('weatherBackgroundOpacity').addEventListener('input', function(e) {
+    document.getElementById('weatherBackgroundOpacityValue').textContent = `${e.target.value}%`;
 });
 
 // Metadata Overlay Editor
@@ -1359,13 +1571,10 @@ async function loadMetadataSettings() {
         if (data.success && data.styles) {
             const styles = data.styles;
             
-            // Load global padding
-            const globalPadding = document.getElementById('globalPadding');
-            if (globalPadding) {
-                globalPadding.value = styles.global_padding || 0;
-            }
+            // First load available fonts
+            await loadAvailableFonts();
             
-            // Update fields
+            // Then update the rest of the settings
             Object.entries(styles.fields).forEach(([field, config]) => {
                 const enabledCheckbox = document.querySelector(`#${field}Enabled`);
                 if (enabledCheckbox) {
@@ -1378,11 +1587,18 @@ async function loadMetadataSettings() {
                     const formatInput = fieldContainer.querySelector('.field-format');
                     if (formatInput) formatInput.value = config.format || '';
 
-                    // Update font family (remove .ttf extension if present)
-                    const fontFamilySelect = fieldContainer.querySelector('.field-font-family');
+                    // Update font family (ensure we keep the .ttf extension in the value)
+                    const fontFamilySelect = document.querySelector(`[data-field="${field}"] .field-font-family`);
                     if (fontFamilySelect) {
-                        const fontValue = config.font_family?.replace('.ttf', '') || 'BebasNeue-Regular';
-                        fontFamilySelect.value = fontValue;
+                        const fontValue = config.font_family || 'BebasNeue-Regular.ttf';
+                        // Make sure the value includes .ttf extension
+                        const fullFontValue = fontValue.endsWith('.ttf') ? fontValue : `${fontValue}.ttf`;
+                        fontFamilySelect.value = fullFontValue;
+                        
+                        // If the value wasn't set, log a warning
+                        if (fontFamilySelect.value !== fullFontValue) {
+                            console.warn(`Font family ${fullFontValue} not found in options for field ${field}`);
+                        }
                     }
 
                     // Update font size (remove % for the input)
@@ -1567,19 +1783,36 @@ async function loadAvailableFonts() {
             // Get all font family select elements
             const fontSelects = document.querySelectorAll('.field-font-family');
             
-            // Create options HTML
-            const optionsHTML = data.fonts.map(font => {
-                // Display name will be without extension and formatted
-                const displayName = font.replace('.ttf', '')
-                    .replace(/([A-Z])/g, ' $1') // Add space before capital letters
-                    .replace(/-/g, ' ') // Replace hyphens with spaces
-                    .trim();
-                return `<option value="${font}">${displayName}</option>`;
-            }).join('');
+            // Create options HTML starting with the default option
+            const optionsHTML = `
+                <option value="BebasNeue-Regular.ttf">Bebas Neue Regular</option>
+                ${data.fonts.map(font => {
+                    // Remove .ttf extension and format the display name
+                    const displayName = font
+                        .replace('.ttf', '')
+                        .replace(/([A-Z])/g, ' $1') // Add space before capital letters
+                        .replace(/-/g, ' ') // Replace hyphens with spaces
+                        .trim();
+                    return `<option value="${font}">${displayName}</option>`;
+                }).join('')}
+            `;
             
             // Update all font select elements
             fontSelects.forEach(select => {
+                // Store the current value before updating options
+                const currentValue = select.value;
+                
+                // Update options
                 select.innerHTML = optionsHTML;
+                
+                // Restore the selected value if it exists in the new options
+                if (currentValue) {
+                    // Try to find the option with the current value
+                    const option = select.querySelector(`option[value="${currentValue}"]`);
+                    if (option) {
+                        select.value = currentValue;
+                    }
+                }
             });
         }
     } catch (error) {
@@ -2815,14 +3048,29 @@ async function fetchImmichFaces() {
         
         // Fetch faces
         const response = await fetch('/api/immich/faces');
-        const data = await response.json();
-        
-        if (!data.success) {
-            throw new Error(data.error || 'Failed to fetch faces from Immich');
+        if (!response.ok) {
+            let errorMsg = `HTTP error! status: ${response.status}`;
+            try {
+                const errorData = await response.json();
+                errorMsg = errorData.error || `Server error ${response.status}`;
+            } catch (e) { 
+                errorMsg = `Server error ${response.status}`;
+            }
+            throw new Error(errorMsg);
         }
         
+        const data = await response.json();
+        console.log("Data received from /api/immich/faces:", data);
+
+        // Extract the people array from the response
+        if (!data || !data.people) {
+            console.error("Response does not contain people array:", data);
+            throw new Error('Invalid response format: missing people array');
+        }
+
         // Store faces and update UI
-        immichFaces = data.faces || [];
+        immichFaces = data.people;
+        console.log(`Processing ${immichFaces.length} faces out of total ${data.total} (${data.hidden} hidden)`);
         displayFaces(immichFaces);
         
         // Hide loading, show content
@@ -2830,11 +3078,8 @@ async function fetchImmichFaces() {
         document.getElementById('immichFaceContent').style.display = 'block';
         
         // Show message if no faces found
-        if (immichFaces.length === 0) {
-            document.getElementById('noFacesFound').style.display = 'block';
-        } else {
-            document.getElementById('noFacesFound').style.display = 'none';
-        }
+        document.getElementById('noFacesFound').style.display = immichFaces.length === 0 ? 'block' : 'none';
+        
     } catch (error) {
         console.error('Error fetching Immich faces:', error);
         
@@ -2842,6 +3087,29 @@ async function fetchImmichFaces() {
         document.getElementById('immichFaceLoading').style.display = 'none';
         document.getElementById('immichFaceError').style.display = 'block';
         document.getElementById('immichFaceError').textContent = 'Error fetching faces: ' + error.message;
+        document.getElementById('immichFaceContent').style.display = 'none';
+    }
+}
+
+// Function to fetch image with authentication and convert to data URL
+async function fetchImageAsDataUrl(url, apiKey) {
+    try {
+        const response = await fetch(url, {
+            headers: {
+                'Accept': 'image/jpeg',
+                'x-api-key': apiKey
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const blob = await response.blob();
+        return URL.createObjectURL(blob);
+    } catch (error) {
+        console.error('Error fetching image:', error);
+        return '/static/img/default-avatar.png';
     }
 }
 
@@ -2850,24 +3118,39 @@ function displayFaces(faces) {
     const tbody = document.getElementById('immichFacesBody');
     tbody.innerHTML = '';
     
-    faces.forEach(face => {
+    // Filter out unnamed faces and hidden faces
+    const namedFaces = faces.filter(face => 
+        face.name && 
+        face.name.trim() !== '' && 
+        face.name.toLowerCase() !== 'unknown' && 
+        !face.isHidden
+    );
+    
+    if (namedFaces.length > 0) {
+        console.log("Sample face object:", namedFaces[0]);
+        console.log(`Showing ${namedFaces.length} named faces out of ${faces.length} total faces`);
+    }
+
+    namedFaces.forEach(face => {
+        const faceId = face.id;
+        const faceName = face.name;
+        const isFavorite = face.isFavorite;
+        
         const tr = document.createElement('tr');
         tr.innerHTML = `
             <td>
-                <img src="${face.thumbnailPath ? `/api/immich/face-thumbnail/${face.id}` : '/static/img/default-avatar.png'}" 
-                     alt="${face.name}" class="rounded-circle" width="40" height="40">
+                ${faceName}
+                ${isFavorite ? '<i class="bi bi-star-fill text-warning ms-1"></i>' : ''}
             </td>
-            <td>${face.name || 'Unknown'}</td>
-            <td>${face.faceCount || 0}</td>
             <td>
-                <button class="btn btn-sm btn-primary select-face" data-id="${face.id}" data-name="${face.name || 'Unknown'}">
+                <button class="btn btn-sm btn-primary select-face" data-id="${faceId}" data-name="${faceName}">
                     Select
                 </button>
             </td>
         `;
         tbody.appendChild(tr);
     });
-    
+
     // Add event listeners to select buttons
     document.querySelectorAll('.select-face').forEach(button => {
         button.addEventListener('click', function() {
@@ -2876,20 +3159,36 @@ function displayFaces(faces) {
             selectFace(faceId, faceName);
         });
     });
+
+    // Show message if no named faces found
+    document.getElementById('noFacesFound').style.display = 
+        namedFaces.length === 0 ? 'block' : 'none';
+    if (namedFaces.length === 0) {
+        document.getElementById('noFacesFound').textContent = 
+            'No named faces found. Please name faces in Immich first.';
+    }
 }
 
 // Filter faces based on search input
 function filterFaces() {
     const searchTerm = document.getElementById('faceSearchInput').value.toLowerCase();
     
+    // First filter out unnamed and hidden faces
+    const namedFaces = immichFaces.filter(face => 
+        face.name && 
+        face.name.trim() !== '' && 
+        face.name.toLowerCase() !== 'unknown' && 
+        !face.isHidden
+    );
+    
     if (!searchTerm) {
-        // If no search term, show all faces
-        displayFaces(immichFaces);
+        // If no search term, show all named faces
+        displayFaces(namedFaces);
     } else {
-        // Filter faces based on search term
-        const filteredFaces = immichFaces.filter(face => {
-            return (face.name || '').toLowerCase().includes(searchTerm);
-        });
+        // Filter named faces based on search term
+        const filteredFaces = namedFaces.filter(face => 
+            face.name.toLowerCase().includes(searchTerm)
+        );
         
         // Display filtered faces
         displayFaces(filteredFaces);
@@ -2969,6 +3268,49 @@ async function saveFaceImport() {
     } catch (error) {
         console.error('Error saving face import configuration:', error);
         alert('Error saving face import configuration: ' + error.message);
+    }
+}
+
+// Add this new function to load fonts
+async function loadWeatherFonts() {
+    try {
+        const response = await fetch('/api/metadata/available-fonts');
+        const data = await response.json();
+        
+        if (data.success && data.fonts) {
+            const fontSelect = document.getElementById('weatherFontFamily');
+            if (!fontSelect) return;
+            
+            // Create options HTML starting with the default option
+            const optionsHTML = `
+                <option value="BebasNeue-Regular.ttf">Bebas Neue Regular</option>
+                ${data.fonts.map(font => {
+                    // Remove .ttf extension and format the display name
+                    const displayName = font
+                        .replace('.ttf', '')
+                        .replace(/([A-Z])/g, ' $1') // Add space before capital letters
+                        .replace(/-/g, ' ') // Replace hyphens with spaces
+                        .trim();
+                    return `<option value="${font}">${displayName}</option>`;
+                }).join('')}
+            `;
+            
+            // Store the current value before updating options
+            const currentValue = fontSelect.value;
+            
+            // Update options
+            fontSelect.innerHTML = optionsHTML;
+            
+            // Restore the selected value if it exists in the new options
+            if (currentValue) {
+                const option = fontSelect.querySelector(`option[value="${currentValue}"]`);
+                if (option) {
+                    fontSelect.value = currentValue;
+                }
+            }
+        }
+    } catch (error) {
+        console.error('Error loading available fonts:', error);
     }
 }
 </script>

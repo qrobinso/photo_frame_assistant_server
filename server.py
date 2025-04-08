@@ -2086,7 +2086,7 @@ def get_settings():
         return jsonify({"error": "Device not found"}), 404
 
     # Define minimum sleep interval (in minutes)
-    MIN_SLEEP_INTERVAL = 2
+    MIN_SLEEP_INTERVAL = 1
 
     now = datetime.now(timezone.utc)
     sleep_interval = None
@@ -3567,36 +3567,49 @@ def import_google_photos():
         return jsonify({'error': str(e)}), 500
 
 # Add new routes for weather settings
-@app.route('/api/weather/settings', methods=['POST'])
-def update_weather_settings():
-    try:
-        data = request.get_json()
-        success = weather_integration.save_settings({
-            'enabled': data.get('enabled', False),
-            'zipcode': data.get('zipcode'),
-            'api_key': data.get('api_key'),
-            'units': data.get('units', 'F'),
-            'update_interval': int(data.get('update_interval', 6))
-        })
-        
-        if success:
-            return jsonify({'message': 'Weather settings updated successfully'})
-        else:
-            return jsonify({'error': 'Failed to save weather settings'}), 500
-            
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
 @app.route('/api/weather/settings', methods=['GET'])
 def get_weather_settings():
     try:
-        settings = weather_integration.load_settings()
-        # Don't send API key to frontend
-        if 'api_key' in settings:
-            settings['api_key'] = '********' if settings['api_key'] else ''
-        return jsonify(settings)
+        # Use the correct path for weather_config.json
+        weather_config_path = os.path.join(os.path.dirname(__file__), 'integrations', 'overlays', 'weather_config.json')
+        weather_integration = WeatherIntegration(weather_config_path)
+        
+        # Get current settings
+        settings = weather_integration.settings
+        
+        return jsonify({
+            'success': True,
+            'settings': settings
+        })
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        logging.error(f"Error getting weather settings: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        })
+
+@app.route('/api/weather/settings', methods=['POST'])
+def update_weather_settings():
+    try:
+        settings = request.get_json()
+        if not settings:
+            return jsonify({'success': False, 'error': 'No settings provided'})
+
+        # Use the correct path for weather_config.json
+        weather_config_path = os.path.join(os.path.dirname(__file__), 'integrations', 'overlays', 'weather_config.json')
+        weather_integration = WeatherIntegration(weather_config_path)
+        
+        # Save the settings
+        success = weather_integration.save_settings(settings)
+        
+        if success:
+            return jsonify({'success': True})
+        else:
+            return jsonify({'success': False, 'error': 'Failed to save settings'})
+            
+    except Exception as e:
+        logging.error(f"Error updating weather settings: {e}")
+        return jsonify({'success': False, 'error': str(e)})
 
 @app.route('/api/weather/test', methods=['POST'])
 def test_weather():

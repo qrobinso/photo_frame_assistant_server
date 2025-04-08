@@ -13,6 +13,7 @@ import subprocess
 from PIL import Image
 from io import BytesIO
 import requests
+import traceback
 
 # Try to import HEIC support
 try:
@@ -1946,9 +1947,13 @@ def check_immich_for_new_media():
                 assets = immich.get_album_assets(source_id)
             elif source_type == 'face':
                 assets = immich.get_face_assets(source_id)
+                # For faces, we want to maintain only the latest 10 photos
+                # Remove older assets from imported_assets if they're not in the latest 10
+                latest_asset_ids = [asset.get('id') for asset in assets]
+                imported_assets = [asset_id for asset_id in imported_assets if asset_id in latest_asset_ids]
             
             # Filter out already imported assets
-            new_assets = [asset for asset in assets if asset.get('id') not in imported_assets] 
+            new_assets = [asset for asset in assets if asset.get('id') not in imported_assets]
             
             if not new_assets:
                 logging.info(f"No new media files found in Immich {source_type} '{source_name}'")
@@ -1956,119 +1961,69 @@ def check_immich_for_new_media():
             
             logging.info(f"Found {len(new_assets)} new media files in Immich {source_type} '{source_name}'")
             
-            # Get the upload directory from app config
-            with app.app_context():
-                upload_dir = app.config['UPLOAD_FOLDER']
-                os.makedirs(upload_dir, exist_ok=True)
-                
-                # Import each new asset
-                for asset in new_assets:
-                    try:
-                        asset_id = asset.get('id')
-                        
-                        # Skip if this asset has already been imported (double-check)
-                        if asset_id in imported_assets:
-                            logging.info(f"Asset {asset_id} already imported, skipping")
-                            continue
-                        
-                        # Check if we already have a file with this original filename to avoid duplicates
-                        original_filename = secure_filename(asset.get('originalFileName', 'photo.jpg'))
-                        existing_photos = Photo.query.filter(Photo.filename.like(f"immich_%_{original_filename}")).all()
-                        
-                        if existing_photos:
-                            logging.info(f"Asset with filename {original_filename} already exists, skipping")
-                            # Add to imported assets list to prevent future attempts
-                            imported_assets.append(asset_id)
-                            continue
-                        
+            # Import each new file
+            for asset in new_assets:
+                try:
+                    with app.app_context():
+                        # Get the upload directory from app config
+                        upload_dir = app.config['UPLOAD_FOLDER']
+                        os.makedirs(upload_dir, exist_ok=True)
+
                         # Generate a unique filename
-                        unique_filename = f"immich_{uuid.uuid4()}_{original_filename}"
+                        unique_filename = f"immich_{uuid.uuid4()}_{secure_filename(asset.get('originalFileName', 'photo.jpg'))}"
                         dest_path = os.path.join(upload_dir, unique_filename)
-                        
+
                         # Download the asset
-                        success, message = immich.download_asset(asset_id, dest_path)
-                        
+                        success, message = immich.download_asset(asset['id'], dest_path)
                         if not success:
-                            logging.error(f"Failed to download asset {asset_id}: {message}")
+                            logging.error(f"Failed to download asset {asset['id']}: {message}")
                             continue
-                        
-                        # Check if it's a HEIC file and convert to JPG if needed
-                        if dest_path.lower().endswith(('.heic', '.HEIC')):
-                            logging.info(f"Converting HEIC file to JPG: {dest_path}")
-                            converted_path, was_converted = convert_heic_to_jpg(dest_path)
-                            
-                            if was_converted:
-                                # Update the filename and path
-                                dest_path = converted_path
-                                unique_filename = os.path.basename(dest_path)
-                                logging.info(f"Using converted JPG file: {dest_path}")
-                        
-                        # Determine if it's a video
-                        is_video = asset.get('type') == 'VIDEO'
-                        
-                        # Extract EXIF metadata if it's an image
-                        exif_metadata = None
-                        if not is_video:
-                            exif_metadata = extract_exif_metadata(dest_path)
-                        
+
                         # Create a new Photo record
                         new_photo = Photo(
                             filename=unique_filename,
-                            media_type='video' if is_video else 'photo',
-                            heading=f"Auto-imported from Immich {source_type} '{source_name}'",
-                            exif_metadata=exif_metadata
+                            media_type='video' if asset.get('type') == 'VIDEO' else 'photo',
+                            heading=f"Auto-imported from Immich {source_type}"
                         )
                         
                         db.session.add(new_photo)
                         db.session.commit()
-                        
+
                         # Add to playlist
-                        # Shift existing entries
                         PlaylistEntry.query.filter_by(frame_id=frame_id)\
-                            .update({PlaylistEntry.order: PlaylistEntry.order + 1}) 
+                            .update({PlaylistEntry.order: PlaylistEntry.order + 1})
                         
-                        # Add new entry at the beginning
                         entry = PlaylistEntry(
                             frame_id=frame_id,
                             photo_id=new_photo.id,
-                            order=1
+                            order=0
                         )
                         db.session.add(entry)
                         db.session.commit()
-                        
-                        # Process the file with the appropriate function based on type
-                        if is_video:
-                            # For videos, generate thumbnail
+
+                        # Process the file
+                        if new_photo.media_type == 'video':
                             thumbnails_dir = os.path.join(upload_dir, 'thumbnails')
                             os.makedirs(thumbnails_dir, exist_ok=True)
-                            
-                            # Generate thumbnail
                             thumb_filename = f"thumb_{unique_filename}.jpg"
                             thumb_path = os.path.join(thumbnails_dir, thumb_filename)
                             
                             if generate_video_thumbnail(dest_path, thumb_path):
-                                # Update photo record with thumbnail
                                 new_photo.thumbnail = thumb_filename
                                 db.session.commit()
                         else:
-                            # For images, generate thumbnail and orientation versions
                             try:
-                                # Create thumbnails directory if it doesn't exist
                                 thumbnails_dir = os.path.join(upload_dir, 'thumbnails')
                                 os.makedirs(thumbnails_dir, exist_ok=True)
                                 
-                                # Generate thumbnail
                                 with Image.open(dest_path) as img:
                                     img.thumbnail((400, 400))
                                     thumb_filename = f"thumb_{unique_filename}"
                                     thumb_path = os.path.join(thumbnails_dir, thumb_filename)
                                     img.save(thumb_path, "JPEG")
-                                    
-                                    # Update photo record with thumbnail
                                     new_photo.thumbnail = thumb_filename
                                     db.session.commit()
                                 
-                                # Process for orientations
                                 portrait_path = photo_processor.process_for_orientation(dest_path, 'portrait')
                                 if portrait_path:
                                     new_photo.portrait_version = os.path.basename(portrait_path)
@@ -2080,24 +2035,23 @@ def check_immich_for_new_media():
                                 db.session.commit()
                             except Exception as e:
                                 logging.error(f"Error processing image: {str(e)}")
-                        
+
                         # Add to imported assets list
-                        imported_assets.append(asset_id)
-                        
-                        # Update imported assets list after each successful import
-                        # This ensures we don't try to import the same asset again if the process is interrupted
-                        immich.update_imported_assets(config_id, imported_assets)
-                        
-                        logging.info(f"Successfully imported asset {asset_id} to frame {frame_id}")
-                    except Exception as e:
-                        logging.error(f"Error importing asset: {str(e)}")
-                
-                # Final update of imported assets list (redundant but ensures consistency)
-                immich.update_imported_assets(config_id, imported_assets)
-        
+                        imported_assets.append(asset['id'])
+                        logging.info(f"Successfully imported asset {asset['id']} to frame {frame_id}")
+                except Exception as e:
+                    logging.error(f"Error importing asset {asset.get('id')}: {str(e)}")
+            
+            # For faces, ensure we keep only the latest 10 in imported_assets
+            if source_type == 'face':
+                imported_assets = imported_assets[-10:]
+            
+            # Save updated imported files list
+            immich.update_imported_assets(config_id, imported_assets)
+            
         logging.info("Completed automatic check for new media in Immich")
     except Exception as e:
-        logging.error(f"Error checking Immich for new media: {str(e)}")
+        logging.error(f"Error checking network locations for new media: {str(e)}")
 
 # Immich API Routes
 
@@ -2183,26 +2137,23 @@ def get_immich_albums():
 # Route to get faces from Immich
 @integration_routes.route('/api/immich/faces', methods=['GET'])
 def get_immich_faces():
+    # Use the predefined constant for the config file path
+    immich = ImmichIntegration(IMMICH_CONFIG_FILE)
+    
+    # Log what we're doing
+    print("Fetching faces from Immich server")
+    
     try:
-        immich = ImmichIntegration(IMMICH_CONFIG_FILE)
+        # Get faces data from Immich
+        faces_data = immich.get_faces()
+        print(f"Received faces data of type: {type(faces_data)}")
         
-        # Check if connection is configured
-        if not immich.config.get('url') or not immich.config.get('api_key'):
-            return jsonify({"success": False, "error": "Immich connection not configured"}), 400
-        
-        # Get faces
-        faces = immich.get_faces()
-        
-        # Add face count to each face
-        for face in faces:
-            # Get assets for this face
-            face_assets = immich.get_face_assets(face.get('id'))
-            face['faceCount'] = len(face_assets)
-        
-        return jsonify({"success": True, "faces": faces})
+        # Return faces data as is
+        return jsonify(faces_data)
     except Exception as e:
-        logging.error(f"Error getting Immich faces: {str(e)}")
-        return jsonify({"success": False, "error": str(e)}), 500
+        print(f"Error fetching faces: {str(e)}")
+        traceback.print_exc()
+        return jsonify({"error": f"Error fetching faces: {str(e)}"}), 500
 
 # Route to get face thumbnail
 @integration_routes.route('/api/immich/face-thumbnail/<face_id>', methods=['GET'])
@@ -2214,29 +2165,47 @@ def get_immich_face_thumbnail(face_id):
         if not immich.config.get('url') or not immich.config.get('api_key'):
             abort(400)
         
-        # Get the face
-        faces = immich.get_faces()
-        face = next((f for f in faces if f.get('id') == face_id), None)
+        # Get the faces data
+        faces_data = immich.get_faces()
+        
+        # Extract faces array from the response
+        if not isinstance(faces_data, dict) or 'people' not in faces_data:
+            logging.error("Invalid faces data structure received")
+            abort(500)
+            
+        # Find the face in the people array
+        face = next((f for f in faces_data['people'] if f.get('id') == face_id), None)
         
         if not face:
+            logging.error(f"Face not found with ID: {face_id}")
             abort(404)
         
         # Get the thumbnail URL
         thumbnail_path = face.get('thumbnailPath')
         
         if not thumbnail_path:
+            logging.error(f"No thumbnail path for face ID: {face_id}")
             abort(404)
         
         # Download the thumbnail
-        headers = {"X-API-Key": immich.config.get('api_key')}
+        headers = {
+            'Accept': 'image/jpeg',
+            'x-api-key': immich.config.get('api_key')
+        }
+        
+        # Construct the full URL
+        thumbnail_url = f"{immich.config.get('url')}{thumbnail_path}"
+        logging.info(f"Fetching thumbnail from: {thumbnail_url}")
+        
         response = requests.get(
-            f"{immich.config.get('url')}{thumbnail_path}",
+            thumbnail_url,
             headers=headers,
             stream=True,
             timeout=10
         )
         
         if response.status_code != 200:
+            logging.error(f"Failed to fetch thumbnail. Status code: {response.status_code}")
             abort(404)
         
         # Create a BytesIO object from the response content
@@ -2246,6 +2215,7 @@ def get_immich_face_thumbnail(face_id):
         return send_file(img_io, mimetype='image/jpeg')
     except Exception as e:
         logging.error(f"Error getting Immich face thumbnail: {str(e)}")
+        traceback.print_exc()  # Add stack trace for debugging
         abort(500)
 
 # Route to get auto-import configurations

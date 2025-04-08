@@ -29,19 +29,17 @@ class MQTTIntegration:
         self.discovery_prefix = "homeassistant"
         
         # Get frames
-        self.frames = self._get_managed_frames()
+        with self.app.app_context():
+            self.frames = self.Frame.query.all()
         
         # Initialize if enabled
         if self.settings.get('enabled', False):
             self.start()
-
-        # Sync frames with Home Assistant
-        self.sync_frames()
+            logging.warning("MQTT Debug: Integration initialized and started")
+        else:
+            logging.warning("MQTT Debug: MQTT integration disabled")
         
-        # Register each frame
-        for frame in self.frames:
-            self._register_frame(frame)
-
+        # Store device component configs for later use
         self.device_components = {
             'media_player': {
                 'component': 'media_player',
@@ -143,11 +141,14 @@ class MQTTIntegration:
             
             logging.warning("MQTT Debug: Subscribed to all required topics")
             
-            # Publish discovery configs after short delay
-            threading.Timer(2, self._publish_discovery_configs).start()
+            # Sync frames with Home Assistant after connection
+            threading.Timer(1, self.sync_frames).start()
+            
+            # Publish discovery configs after frames are synced
+            threading.Timer(3, self._publish_discovery_configs).start()
             
             # Publish initial state
-            threading.Timer(1, self.publish_state).start()
+            threading.Timer(5, self.publish_state_all).start()
         else:
             logging.error(f"Failed to connect to MQTT broker with code: {rc}")
             self.connected = False
@@ -398,28 +399,32 @@ class MQTTIntegration:
         if not self.connected:
             return
             
-        device_info = {
-            "identifiers": ["photo_frame"],
-            "name": self.settings.get('device_name', 'Photo Frame'),
-            "model": "Photo Frame Server",
-            "manufacturer": "Custom"
-        }
+        try:
+            with self.app.app_context():
+                device_info = {
+                    "identifiers": ["photo_frame"],
+                    "name": self.settings.get('device_name', 'Photo Frame'),
+                    "model": "Photo Frame Server",
+                    "manufacturer": "Custom"
+                }
 
-        # Photo selector
-        photos = [f for f in os.listdir(self.photo_dir) 
-                 if f.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp'))]
-                 
-        select_config = {
-            "name": "Photo Select",
-            "unique_id": "photo_frame_select",
-            "command_topic": f"{self.topic_prefix}/photo/set",
-            "state_topic": f"{self.topic_prefix}/state",
-            "value_template": "{{ value_json.current_photo }}",
-            "options": photos,
-            "device": device_info
-        }
-        
-        self._publish_config("select", "photo_select", select_config)
+                # Photo selector
+                photos = [f for f in os.listdir(self.photo_dir) 
+                         if f.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp'))]
+                         
+                select_config = {
+                    "name": "Photo Select",
+                    "unique_id": "photo_frame_select",
+                    "command_topic": f"{self.topic_prefix}/photo/set",
+                    "state_topic": f"{self.topic_prefix}/state",
+                    "value_template": "{{ value_json.current_photo }}",
+                    "options": photos,
+                    "device": device_info
+                }
+                
+                self._publish_config("select", "photo_select", select_config)
+        except Exception as e:
+            logging.error(f"Error publishing discovery configs: {e}")
 
     def _publish_config(self, component: str, name: str, config: Dict[str, Any]):
         """Publish a single discovery config."""
@@ -434,36 +439,101 @@ class MQTTIntegration:
 
     def publish_state(self, frame):
         """Publish frame state to Home Assistant."""
-        # Get frame status
-        status = frame.get_status()[0]
-        state = 'playing' if status == 2 else 'paused'
-        
-        # Get current photo - FIXED: Use frame relationship instead of direct Photo access
-        current_photo = frame.current_photo
-        
-        # Media player state
-        self.client.publish(f'photo_frame/{frame.id}/state', state)
-        
-        # Attributes
-        attributes = {
-            'media_title': current_photo.heading if current_photo else None,
-            'media_artist': 'Photo Frame',
-            'source': 'playlist',
-            'shuffle': frame.shuffle_enabled,
-            'playlist_position': frame.playlist_entries.count(),
-            'playlist_length': frame.playlist_entries.count(),
-            'last_updated': datetime.now().isoformat()
-        }
-        self.client.publish(f'photo_frame/{frame.id}/attributes', 
-                          json.dumps(attributes))
+        if not self.connected or not self.client:
+            logging.warning("MQTT client not connected, skipping state publish")
+            return
+            
+        try:
+            # Get frame status
+            status = frame.get_status()[0]
+            state = 'playing' if status == 2 else 'paused'
+            
+            # Get current photo
+            current_photo = frame.current_photo
+            
+            # Media player state
+            self.client.publish(f'{self.topic_prefix}/{frame.id}/state', state)
+            
+            # Full state as JSON
+            state_json = {
+                'state': state,
+                'shuffle_enabled': str(frame.shuffle_enabled).lower(),
+                'deep_sleep_enabled': str(frame.deep_sleep_enabled).lower(),
+                'sleep_interval': str(frame.sleep_interval),
+                'last_wake_time': frame.last_wake_time.isoformat() if frame.last_wake_time else None,
+                'next_wake_time': frame.next_wake_time.isoformat() if frame.next_wake_time else None,
+                'next_up': current_photo.filename if current_photo else None
+            }
+            self.client.publish(
+                f'{self.topic_prefix}/{frame.id}/state',
+                json.dumps(state_json),
+                retain=True
+            )
+            
+            # Attributes
+            attributes = {
+                'media_title': current_photo.heading if current_photo else None,
+                'media_artist': 'Photo Frame',
+                'source': 'playlist',
+                'shuffle': frame.shuffle_enabled,
+                'playlist_position': frame.playlist_entries.count(),
+                'playlist_length': frame.playlist_entries.count(),
+                'last_updated': datetime.now().isoformat()
+            }
+            self.client.publish(
+                f'{self.topic_prefix}/{frame.id}/attributes', 
+                json.dumps(attributes),
+                retain=True
+            )
 
-        # Power state
-        power_state = 'ON' if status in [1, 2] else 'OFF'
-        self.client.publish(f'photo_frame/{frame.id}/power/state', power_state)
+            # Power state
+            power_state = 'ON' if status in [1, 2] else 'OFF'
+            self.client.publish(
+                f'{self.topic_prefix}/{frame.id}/power/state', 
+                power_state,
+                retain=True
+            )
 
-        # Sleep interval
-        self.client.publish(f'photo_frame/{frame.id}/sleep_interval/state', 
-                          str(frame.sleep_interval))
+            # Sleep interval
+            self.client.publish(
+                f'{self.topic_prefix}/{frame.id}/sleep_interval/state', 
+                str(frame.sleep_interval),
+                retain=True
+            )
+            
+            # Individual states for switches
+            self.client.publish(
+                f'{self.topic_prefix}/{frame.id}/shuffle/state',
+                str(frame.shuffle_enabled).lower(),
+                retain=True
+            )
+            
+            self.client.publish(
+                f'{self.topic_prefix}/{frame.id}/deep_sleep/state',
+                str(frame.deep_sleep_enabled).lower(),
+                retain=True
+            )
+            
+            logging.warning(f"MQTT Debug: Published state for frame {frame.id}")
+            
+        except Exception as e:
+            logging.error(f"Error publishing MQTT state: {e}")
+            self.connected = False
+            self.status = "Disconnected"
+
+    def publish_state_all(self):
+        """Publish state for all frames."""
+        if not self.connected or not self.client:
+            logging.warning("MQTT client not connected, skipping state publish")
+            return
+        
+        try:
+            with self.app.app_context():
+                frames = self.Frame.query.all()
+                for frame in frames:
+                    self.publish_state(frame)
+        except Exception as e:
+            logging.error(f"Error publishing MQTT state for all frames: {e}")
 
     def _register_frame(self, frame):
         """Register a frame with Home Assistant."""
@@ -471,154 +541,176 @@ class MQTTIntegration:
             return
             
         try:
-            playlist_entries = frame.playlist_entries.order_by(self.PlaylistEntry.order).all()
-            
-            # Create device info for this frame
-            device_info = {
-                "identifiers": [f"frame_{frame.id}"],
-                "name": frame.name,
-                "model": frame.model or "Photo Frame",
-                "manufacturer": "Photo Frame Assistant"
-            }
+            with self.app.app_context():
+                # Fetch a fresh copy of the frame with all relationships
+                frame = self.Frame.query.get(frame.id)
+                if not frame:
+                    logging.error(f"Frame {frame.id} not found when registering")
+                    return
+                    
+                playlist_entries = frame.playlist_entries.order_by(self.PlaylistEntry.order).all()
+                
+                # Create device info for this frame
+                device_info = {
+                    "identifiers": [f"frame_{frame.id}"],
+                    "name": frame.name,
+                    "model": frame.model or "Photo Frame",
+                    "manufacturer": "Photo Frame Assistant"
+                }
 
-            # Create and publish all entity configs
-            self._publish_frame_entities(frame, device_info, playlist_entries)
-            
-            # Immediately publish current state
-            self.publish_state(frame)
-            
+                # Create and publish all entity configs
+                self._publish_frame_entities(frame, device_info, playlist_entries)
+                
+                # Immediately publish current state
+                self.publish_state(frame)
+                
         except Exception as e:
             logging.error(f"Error registering frame {frame.id}: {e}")
 
     def _publish_frame_entities(self, frame, device_info, playlist_entries):
         """Publish all entity configs for a frame."""
-        # Deep Sleep switch
-        deep_sleep_config = {
-            "name": f"{frame.name} Deep Sleep",
-            "unique_id": f"frame_{frame.id}_deep_sleep",
-            "command_topic": f"{self.topic_prefix}/{frame.id}/deep_sleep/set",
-            "state_topic": f"{self.topic_prefix}/{frame.id}/state",
-            "value_template": "{{ value_json.deep_sleep_enabled }}",
-            "payload_on": "true",
-            "payload_off": "false",
-            "state_on": "true",
-            "state_off": "false",
-            "device": device_info,
-            "icon": "mdi:power-sleep",
-            "entity_category": "config",
-            "device_class": "switch"
-        }
-        self._publish_config("switch", f"{frame.id}_deep_sleep", deep_sleep_config)
+        try:
+            logging.warning(f"MQTT Debug: Publishing entities for frame {frame.id} - {frame.name}")
+            
+            # Deep Sleep switch
+            deep_sleep_config = {
+                "name": f"{frame.name} Deep Sleep",
+                "unique_id": f"frame_{frame.id}_deep_sleep",
+                "command_topic": f"{self.topic_prefix}/{frame.id}/deep_sleep/set",
+                "state_topic": f"{self.topic_prefix}/{frame.id}/state",
+                "value_template": "{{ value_json.deep_sleep_enabled }}",
+                "payload_on": "true",
+                "payload_off": "false",
+                "state_on": "true",
+                "state_off": "false",
+                "device": device_info,
+                "icon": "mdi:power-sleep",
+                "entity_category": "config",
+                "device_class": "switch"
+            }
+            self._publish_config("switch", f"{frame.id}_deep_sleep", deep_sleep_config)
+            logging.warning(f"MQTT Debug: Published deep sleep switch for frame {frame.id}")
 
-        # Shuffle switch
-        shuffle_config = {
-            "name": f"{frame.name} Shuffle",
-            "unique_id": f"frame_{frame.id}_shuffle",
-            "command_topic": f"{self.topic_prefix}/{frame.id}/shuffle/set",
-            "state_topic": f"{self.topic_prefix}/{frame.id}/state",
-            "value_template": "{{ value_json.shuffle_enabled }}",
-            "payload_on": "true",
-            "payload_off": "false",
-            "state_on": "true",
-            "state_off": "false",
-            "device": device_info,
-            "icon": "mdi:shuffle",
-            "entity_category": "config",
-            "device_class": "switch"
-        }
-        self._publish_config("switch", f"{frame.id}_shuffle", shuffle_config)
+            # Shuffle switch
+            shuffle_config = {
+                "name": f"{frame.name} Shuffle",
+                "unique_id": f"frame_{frame.id}_shuffle",
+                "command_topic": f"{self.topic_prefix}/{frame.id}/shuffle/set",
+                "state_topic": f"{self.topic_prefix}/{frame.id}/state",
+                "value_template": "{{ value_json.shuffle_enabled }}",
+                "payload_on": "true",
+                "payload_off": "false",
+                "state_on": "true",
+                "state_off": "false",
+                "device": device_info,
+                "icon": "mdi:shuffle",
+                "entity_category": "config",
+                "device_class": "switch"
+            }
+            self._publish_config("switch", f"{frame.id}_shuffle", shuffle_config)
+            logging.warning(f"MQTT Debug: Published shuffle switch for frame {frame.id}")
 
-        # Last Wake Time sensor
-        last_wake_config = { 
-            "name": f"{frame.name} Last Wake",
-            "unique_id": f"frame_{frame.id}_last_wake",
-            "state_topic": f"{self.topic_prefix}/{frame.id}/state",
-            "value_template": "{{ value_json.last_wake_time }}",
-            "device": device_info,
-            "icon": "mdi:clock-outline",
-            "entity_category": "diagnostic",
-            "device_class": "timestamp"
-        }
-        self._publish_config("sensor", f"{frame.id}_last_wake", last_wake_config)
+            # Last Wake Time sensor
+            last_wake_config = { 
+                "name": f"{frame.name} Last Wake",
+                "unique_id": f"frame_{frame.id}_last_wake",
+                "state_topic": f"{self.topic_prefix}/{frame.id}/state",
+                "value_template": "{{ value_json.last_wake_time }}",
+                "device": device_info,
+                "icon": "mdi:clock-outline",
+                "entity_category": "diagnostic",
+                "device_class": "timestamp"
+            }
+            self._publish_config("sensor", f"{frame.id}_last_wake", last_wake_config)
+            logging.warning(f"MQTT Debug: Published last wake sensor for frame {frame.id}")
 
-        # Next Wake Time sensor
-        next_wake_config = { 
-            "name": f"{frame.name} Next Wake",
-            "unique_id": f"frame_{frame.id}_next_wake",
-            "state_topic": f"{self.topic_prefix}/{frame.id}/state",
-            "value_template": "{{ value_json.next_wake_time }}",
-            "device": device_info,
-            "icon": "mdi:clock-outline",
-            "entity_category": "diagnostic",
-            "device_class": "timestamp"
-        }
-        self._publish_config("sensor", f"{frame.id}_next_wake", next_wake_config)
+            # Next Wake Time sensor
+            next_wake_config = { 
+                "name": f"{frame.name} Next Wake",
+                "unique_id": f"frame_{frame.id}_next_wake",
+                "state_topic": f"{self.topic_prefix}/{frame.id}/state",
+                "value_template": "{{ value_json.next_wake_time }}",
+                "device": device_info,
+                "icon": "mdi:clock-outline",
+                "entity_category": "diagnostic",
+                "device_class": "timestamp"
+            }
+            self._publish_config("sensor", f"{frame.id}_next_wake", next_wake_config)
+            logging.warning(f"MQTT Debug: Published next wake sensor for frame {frame.id}")
 
-        # Playlist selector
-        playlists = self.CustomPlaylist.query.all()
-        playlist_options = ["--Select Playlist--", "--None--"] + [f"{p.name} [{p.id}]" for p in playlists]
-        
-        select_playlist_config = {
-            "name": f"{frame.name} Playlist",
-            "unique_id": f"frame_{frame.id}_playlist",
-            "command_topic": f"{self.topic_prefix}/{frame.id}/apply_playlist/set",
-            "state_topic": f"{self.topic_prefix}/{frame.id}/playlist_state",
-            "options": playlist_options,
-            "device": device_info,
-            "icon": "mdi:playlist-music",
-            "entity_category": "config"
-        }
-        self._publish_config("select", f"{frame.id}_playlist", select_playlist_config)
+            # Playlist selector
+            with self.app.app_context():
+                playlists = self.CustomPlaylist.query.all()
+                playlist_options = ["--Select Playlist--", "--None--"] + [f"{p.name} [{p.id}]" for p in playlists]
+            
+            select_playlist_config = {
+                "name": f"{frame.name} Playlist",
+                "unique_id": f"frame_{frame.id}_playlist",
+                "command_topic": f"{self.topic_prefix}/{frame.id}/apply_playlist/set",
+                "state_topic": f"{self.topic_prefix}/{frame.id}/playlist_state",
+                "options": playlist_options,
+                "device": device_info,
+                "icon": "mdi:playlist-music",
+                "entity_category": "config"
+            }
+            self._publish_config("select", f"{frame.id}_playlist", select_playlist_config)
+            logging.warning(f"MQTT Debug: Published playlist selector for frame {frame.id}")
 
-        # Initialize playlist state to default value
-        self.client.publish(
-            f"{self.topic_prefix}/{frame.id}/playlist_state",
-            "--Select Playlist--",
-            retain=True
-        )
+            # Initialize playlist state to default value
+            self.client.publish(
+                f"{self.topic_prefix}/{frame.id}/playlist_state",
+                "--Select Playlist--",
+                retain=True
+            )
 
-        # Next Up selector
-        select_next_up_config = {
-            "name": f"{frame.name} Next Up",
-            "unique_id": f"frame_{frame.id}_next_up",
-            "command_topic": f"{self.topic_prefix}/{frame.id}/next_up/set",
-            "state_topic": f"{self.topic_prefix}/{frame.id}/state",
-            "value_template": "{{ value_json.next_up }}",
-            "options": self._get_frame_playlist(frame),
-            "device": device_info,
-            "icon": "mdi:image-plus",
-            "entity_category": "config"
-        }
-        self._publish_config("select", f"{frame.id}_next_up", select_next_up_config)
+            # Next Up selector
+            options = self._get_frame_playlist(frame)
+            select_next_up_config = {
+                "name": f"{frame.name} Next Up",
+                "unique_id": f"frame_{frame.id}_next_up",
+                "command_topic": f"{self.topic_prefix}/{frame.id}/next_up/set",
+                "state_topic": f"{self.topic_prefix}/{frame.id}/state",
+                "value_template": "{{ value_json.next_up }}",
+                "options": options,
+                "device": device_info,
+                "icon": "mdi:image-plus",
+                "entity_category": "config"
+            }
+            self._publish_config("select", f"{frame.id}_next_up", select_next_up_config)
+            logging.warning(f"MQTT Debug: Published next up selector for frame {frame.id} with {len(options)} options")
 
-        # Sleep Interval number
-        sleep_interval_config = {
-            "name": f"{frame.name} Sleep Interval",
-            "unique_id": f"frame_{frame.id}_sleep_interval",
-            "command_topic": f"{self.topic_prefix}/{frame.id}/sleep_interval/set",
-            "state_topic": f"{self.topic_prefix}/{frame.id}/state",
-            "value_template": "{{ value_json.sleep_interval }}",
-            "min": 1,
-            "max": 3600,
-            "step": 1,
-            "unit_of_measurement": "minutes",
-            "device": device_info,
-            "icon": "mdi:timer-outline",
-            "entity_category": "config",
-            "state": frame.sleep_interval
-        }
-        self._publish_config("number", f"{frame.id}_sleep_interval", sleep_interval_config)
+            # Sleep Interval number
+            sleep_interval_config = {
+                "name": f"{frame.name} Sleep Interval",
+                "unique_id": f"frame_{frame.id}_sleep_interval",
+                "command_topic": f"{self.topic_prefix}/{frame.id}/sleep_interval/set",
+                "state_topic": f"{self.topic_prefix}/{frame.id}/state",
+                "value_template": "{{ value_json.sleep_interval }}",
+                "min": 1,
+                "max": 3600,
+                "step": 1,
+                "unit_of_measurement": "minutes",
+                "device": device_info,
+                "icon": "mdi:timer-outline",
+                "entity_category": "config",
+                "state": str(frame.sleep_interval)
+            }
+            self._publish_config("number", f"{frame.id}_sleep_interval", sleep_interval_config)
+            logging.warning(f"MQTT Debug: Published sleep interval for frame {frame.id}")
 
-        # Status notification sensor
-        notification_config = {
-            "name": f"{frame.name} Status",
-            "unique_id": f"frame_{frame.id}_notification",
-            "state_topic": f"{self.topic_prefix}/{frame.id}/notification",
-            "device": device_info,
-            "icon": "mdi:bell",
-            "entity_category": "diagnostic"
-        }
-        self._publish_config("sensor", f"{frame.id}_notification", notification_config)
+            # Status notification sensor
+            notification_config = {
+                "name": f"{frame.name} Status",
+                "unique_id": f"frame_{frame.id}_notification",
+                "state_topic": f"{self.topic_prefix}/{frame.id}/notification",
+                "device": device_info,
+                "icon": "mdi:bell",
+                "entity_category": "diagnostic"
+            }
+            self._publish_config("sensor", f"{frame.id}_notification", notification_config)
+            logging.warning(f"MQTT Debug: Published notification sensor for frame {frame.id}")
+        except Exception as e:
+            logging.error(f"Error publishing frame entities for frame {frame.id}: {e}")
 
     def update_frame_options(self, frame):
         """Update Home Assistant options when playlist changes."""
@@ -765,28 +857,34 @@ class MQTTIntegration:
             return
         
         try:
-            # Get current frames from database
-            current_frames = self.Frame.query.all()
-            current_frame_ids = {f.id for f in current_frames}
-            
-            # Get previously known frames
-            known_frame_ids = {f.id for f in self.frames}
-            
-            # Find frames to remove and add
-            frames_to_remove = known_frame_ids - current_frame_ids
-            frames_to_add = current_frame_ids - known_frame_ids
-            
-            # Unregister removed frames
-            for frame_id in frames_to_remove:
-                self.unregister_frame(frame_id)
-            
-            # Register new frames
-            for frame in current_frames:
-                if frame.id in frames_to_add:
-                    self._register_frame(frame)
-            
-            # Update frames list
-            self.frames = current_frames
+            with self.app.app_context():
+                # Get current frames from database
+                current_frames = self.Frame.query.all()
+                current_frame_ids = {f.id for f in current_frames}
+                
+                # Get previously known frames
+                known_frame_ids = {f.id for f in self.frames}
+                
+                # Find frames to remove and add
+                frames_to_remove = known_frame_ids - current_frame_ids
+                frames_to_add = current_frame_ids - known_frame_ids
+                
+                logging.warning(f"MQTT Debug: Synchronizing frames. Removing {frames_to_remove}, Adding {frames_to_add}")
+                
+                # Unregister removed frames
+                for frame_id in frames_to_remove:
+                    self.unregister_frame(frame_id)
+                
+                # Register new frames
+                for frame in current_frames:
+                    if frame.id in frames_to_add:
+                        self._register_frame(frame)
+                    else:
+                        # Update existing frames to ensure all entities are present
+                        self._register_frame(frame)
+                
+                # Update frames list
+                self.frames = current_frames
         except Exception as e:
             logging.error(f"Error synchronizing frames: {e}") 
 

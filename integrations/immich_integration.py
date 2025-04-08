@@ -6,6 +6,7 @@ from datetime import datetime
 import requests
 from pathlib import Path
 import uuid
+import traceback
 
 logger = logging.getLogger(__name__)
 
@@ -118,17 +119,49 @@ class ImmichIntegration:
             return []
             
         try:
-            headers = {"X-API-Key": self.config["api_key"]}
-            response = requests.get(f"{self.config['url']}/api/faces", headers=headers, timeout=10)
+            # Update header format to match Immich API requirements
+            headers = {
+                'Accept': 'application/json',
+                'x-api-key': self.config["api_key"]
+            }
             
+            # The correct endpoint for people/faces in Immich API
+            api_url = self.get_api_url('/api/people')
+            
+            print(f"Fetching faces from Immich server at: {api_url}")
+            response = requests.get(api_url, headers=headers, timeout=10)
+            
+            print(f"Immich server response status: {response.status_code}")
             if response.status_code == 200:
-                return response.json()
+                # Parse the response JSON
+                data = response.json()
+                print(f"Raw response data: {data}")
+                
+                # Extract the people array from the response
+                if isinstance(data, dict) and 'people' in data:
+                    people = data['people']
+                    print(f"Found {len(people)} people in response")
+                    return {
+                        'people': people,
+                        'hasNextPage': data.get('hasNextPage', False),
+                        'total': data.get('total', len(people)),
+                        'hidden': data.get('hidden', 0)
+                    }
+                else:
+                    print("Response does not contain 'people' array")
+                    return {'people': [], 'hasNextPage': False, 'total': 0, 'hidden': 0}
             else:
                 logger.error(f"Failed to get faces: {response.status_code}")
-                return []
+                try:
+                    error_data = response.json()
+                    print(f"Error response: {error_data}")
+                except:
+                    print(f"Response content: {response.text}")
+                return {'people': [], 'hasNextPage': False, 'total': 0, 'hidden': 0}
         except Exception as e:
-            logger.error(f"Error getting faces: {e}")
-            return []
+            logger.error(f"Error getting faces: {str(e)}")
+            print(f"Exception details: {str(e)}")
+            return {'people': [], 'hasNextPage': False, 'total': 0, 'hidden': 0}
             
     def get_album_assets(self, album_id):
         """Get assets in an album."""
@@ -150,21 +183,73 @@ class ImmichIntegration:
             return []
             
     def get_face_assets(self, person_id):
-        """Get assets for a face/person."""
+        """Get assets for a face/person, limited to latest 10 photos."""
         if not self.config["url"] or not self.config["api_key"]:
             return []
             
         try:
-            headers = {"X-API-Key": self.config["api_key"]}
-            response = requests.get(f"{self.config['url']}/api/person/{person_id}/assets", headers=headers, timeout=10)
+            headers = {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+                'x-api-key': self.config["api_key"]
+            }
+            
+            # Use the correct metadata search endpoint
+            api_url = self.get_api_url('/api/search/metadata')
+            
+            # Prepare search parameters - only include what we need
+            search_params = {
+                'personIds': [person_id],
+                'size': 10,
+                'page': 1,
+                'order': 'desc',
+                'withExif': True     # Include EXIF data in response
+            }
+            
+            logger.info(f"Searching for assets with person ID: {person_id}")
+            logger.info(f"Search URL: {api_url}")
+            logger.info(f"Search parameters: {json.dumps(search_params, indent=2)}")
+            
+            response = requests.post(
+                api_url,
+                headers=headers,
+                json=search_params,
+                timeout=10
+            )
             
             if response.status_code == 200:
-                return response.json()
+                data = response.json()
+                logger.info(f"Search response status: {response.status_code}")
+                logger.info(f"Search response data: {json.dumps(data, indent=2)}")
+                
+                # Handle different possible response formats
+                items = []
+                if isinstance(data, dict):
+                    if 'items' in data:
+                        # Format: { items: [...], total: n }
+                        items = data.get('items', [])
+                    elif 'assets' in data:
+                        # Format: { assets: { items: [...], total: n } }
+                        assets = data.get('assets', {})
+                        if isinstance(assets, dict):
+                            items = assets.get('items', [])
+                elif isinstance(data, list):
+                    # Format: direct array of items
+                    items = data
+                
+                logger.info(f"Found {len(items)} items for person {person_id}")
+                return items
             else:
                 logger.error(f"Failed to get face assets: {response.status_code}")
+                try:
+                    error_data = response.json()
+                    logger.error(f"Error response: {error_data}")
+                except:
+                    logger.error(f"Response content: {response.text}")
                 return []
         except Exception as e:
             logger.error(f"Error getting face assets: {e}")
+            logger.error(f"Stack trace: {traceback.format_exc()}")
             return []
             
     def download_asset(self, asset_id, destination_path):

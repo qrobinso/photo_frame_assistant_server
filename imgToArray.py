@@ -20,12 +20,8 @@ def img_to_array(image, orientation='portrait'):
     if image.mode != 'RGB':
         image = image.convert('RGB')
     
-    # Determine if we need to rotate the image
-    is_image_landscape = image.width > image.height
-    is_target_landscape = orientation.lower() == 'landscape'
-    
-    # Rotate if needed to match the desired orientation
-    if is_image_landscape != is_target_landscape:
+    # For landscape orientation, always rotate 90 degrees
+    if orientation.lower() == 'landscape':
         try:
             # For newer versions of PIL
             from PIL.Image import Transpose

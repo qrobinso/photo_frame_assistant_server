@@ -3,11 +3,11 @@
         "date": {
             "enabled": true,
             "format": "{date}",
-            "font_family": "FogtwoNo5.ttf",
-            "font_size": "3%",
-            "color": "#ffffff",
+            "font_family": "Champagne & Limousines.ttf",
+            "font_size": "4%",
+            "color": "#a1a1a1",
             "position": "bottom-center",
-            "margin": "13%",
+            "margin": "8%",
             "stack_order": 0
         },
         "time": {
@@ -27,7 +27,7 @@
             "font_size": "3%",
             "color": "#ffffff",
             "position": "bottom-center",
-            "margin": "10%",
+            "margin": "8%",
             "stack_order": 2
         },
         "camera": {
@@ -56,7 +56,7 @@
         "color": "#000000",
         "opacity": "50"
     },
-    "stack_spacing": "2%",
+    "stack_spacing": "5%",
     "max_text_width": "80%",
     "global_padding": 0
 }
