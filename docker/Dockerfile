@@ -36,6 +36,7 @@ RUN mkdir -p /app/uploads/thumbnails \
     /app/logs \
     /app/credentials \
     /app/integrations/overlays \
+    /app/config \
     && chown -R photoframe:photoframe /app
 
 # Copy requirements first for better caching
@@ -59,8 +60,5 @@ ENV FLASK_ENV=production
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/app
 
-# Make the entrypoint script executable
-RUN chmod +x ./docker/docker-entrypoint.sh
-
 # Use the entrypoint script
-ENTRYPOINT ["./docker/docker-entrypoint.sh"]
+ENTRYPOINT ["./docker/docker-entrypoint.sh"] 

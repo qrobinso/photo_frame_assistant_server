@@ -84,14 +84,14 @@ os.makedirs(OVERLAYS_DIR, exist_ok=True)
 # Config File Paths
 SERVER_SETTINGS_FILE = os.path.join(CONFIG_DIR, "server_settings.json")
 PHOTOGEN_SETTINGS_FILE = os.path.join(CONFIG_DIR, "photogen_settings.json")
-MQTT_CONFIG_PATH = os.path.join(INTEGRATIONS_DIR, 'mqtt_config.txt') # Keep .txt for backward compat? Or rename to .json? Assuming .txt for now.
-UNSPLASH_CONFIG_PATH = os.path.join(INTEGRATIONS_DIR, 'unsplash_config.json')
-PIXABAY_CONFIG_PATH = os.path.join(INTEGRATIONS_DIR, 'pixabay_config.json')
-WEATHER_CONFIG_PATH = os.path.join(OVERLAYS_DIR, 'weather_config.json')
-METADATA_CONFIG_PATH = os.path.join(OVERLAYS_DIR, 'metadata_config.json')
-QRCODE_CONFIG_PATH = os.path.join(OVERLAYS_DIR, 'qrcode_config.json')
-GPHOTOS_SECRETS_FILE = os.path.join(CREDENTIALS_DIR, 'gphotos_auth.json')
-GPHOTOS_TOKEN_FILE = os.path.join(CREDENTIALS_DIR, 'google_photos_token.json')
+MQTT_CONFIG_PATH = os.path.join(CONFIG_DIR, 'mqtt_config.json')
+UNSPLASH_CONFIG_PATH = os.path.join(CONFIG_DIR, 'unsplash_config.json')
+PIXABAY_CONFIG_PATH = os.path.join(CONFIG_DIR, 'pixabay_config.json')
+WEATHER_CONFIG_PATH = os.path.join(CONFIG_DIR, 'weather_config.json')
+METADATA_CONFIG_PATH = os.path.join(CONFIG_DIR, 'metadata_config.json')
+QRCODE_CONFIG_PATH = os.path.join(CONFIG_DIR, 'qrcode_config.json')
+GPHOTOS_SECRETS_FILE = os.path.join(CONFIG_DIR, 'gphotos_auth.json')
+GPHOTOS_TOKEN_FILE = os.path.join(CONFIG_DIR, 'google_photos_token.json')
 
 # ------------------------------------------------------------------------------
 # Logging Setup

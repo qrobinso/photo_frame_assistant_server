@@ -8,14 +8,14 @@ services:
       context: https://github.com/qrobinso/photo_frame_assistant_server.git#main
       dockerfile: docker/Dockerfile
     container_name: photo-frame-assistant
-    ports:
-      - "5000:5000"
+    network_mode: "host"  # Use host networking mode
     volumes:
       - photo_data:/app/data  # Single volume for all persistent data
+      - ./config:/app/config  # Mount local config directory
     environment:
       - TZ=UTC  # Set your timezone here
       # Add any other configuration options here
-      - CONFIG_PATH=/app/data/config  # New unified config location
+      - CONFIG_PATH=/app/config  # Config location
       - UPLOAD_PATH=/app/data/uploads
       - LOG_PATH=/app/data/logs
     restart: unless-stopped
