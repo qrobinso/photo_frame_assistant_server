@@ -1,12 +1,6 @@
-version: '3'
-
 services:
   photo-server:
-    image: ghcr.io/qrobinso/photo_frame_assistant_server:latest  # We would host the image on GitHub Container Registry
-    # Alternatively, build directly from GitHub
-    build:
-      context: https://github.com/qrobinso/photo_frame_assistant_server.git#main
-      dockerfile: docker/Dockerfile
+    image: ghcr.io/qrobinso/photo_frame_assistant_server:latest
     container_name: photo-frame-assistant
     network_mode: "host"  # Use host networking mode
     volumes:
@@ -14,7 +8,6 @@ services:
       - ./config:/app/config  # Mount local config directory
     environment:
       - TZ=UTC  # Set your timezone here
-      # Add any other configuration options here
       - CONFIG_PATH=/app/config  # Config location
       - UPLOAD_PATH=/app/data/uploads
       - LOG_PATH=/app/data/logs
