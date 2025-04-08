@@ -28,19 +28,20 @@ if os.path.exists(db_path):
 logger.info("Generating database...")
 
 try:
-    # Import models from server.py
-    from server import db, Photo, PhotoFrame, PlaylistEntry, ScheduledGeneration, GenerationHistory, SyncGroup
+    # Import Flask app and models from server.py
+    from server import app, db, Photo, PhotoFrame, PlaylistEntry, ScheduledGeneration, GenerationHistory, SyncGroup
     
-    # Create all tables
-    logger.info("Creating database tables...")
-    db.create_all()
-    
-    # Verify tables were created
-    engine = create_engine(f'sqlite:///{db_path}')
-    tables = engine.table_names()
-    logger.info(f"Created tables: {', '.join(tables)}")
-    
-    logger.info("Database generation complete!")
+    # Create all tables within application context
+    with app.app_context():
+        logger.info("Creating database tables...")
+        db.create_all()
+        
+        # Verify tables were created
+        engine = create_engine(f'sqlite:///{db_path}')
+        tables = engine.table_names()
+        logger.info(f"Created tables: {', '.join(tables)}")
+        
+        logger.info("Database generation complete!")
 except Exception as e:
     logger.error(f"Error generating database: {e}")
     sys.exit(1) 
