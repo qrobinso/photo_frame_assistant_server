@@ -59,5 +59,8 @@ ENV FLASK_ENV=production
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/app
 
+# Make the entrypoint script executable
+RUN chmod +x ./docker/docker-entrypoint.sh
+
 # Use the entrypoint script
-ENTRYPOINT ["./docker/docker-entrypoint.sh"] 
+ENTRYPOINT ["./docker/docker-entrypoint.sh"]
